@@ -145,7 +145,7 @@ def auto_action(label, find_by, el_type, action, value, sleep_time=0):
         time.sleep(sleep_time)
 
 
-def start_process():
+def browser_login():
     # Bypass reCAPTCHA
     driver.get(SIGN_IN_LINK)
     time.sleep(STEP_TIME)
@@ -161,7 +161,26 @@ def start_process():
     logging.info("login successful!\n")
 
 
-def reschedule(date):
+def browser_get_date():
+    # Requesting to get the whole available dates
+    session = driver.get_cookie("_yatri_session")["value"]
+    script = JS_SCRIPT % (DATE_URL, session)
+    content = driver.execute_script(script)
+    return json.loads(content)
+
+
+def get_time(date):
+    time_url = TIME_URL % date
+    session = driver.get_cookie("_yatri_session")["value"]
+    script = JS_SCRIPT % (time_url, session)
+    content = driver.execute_script(script)
+    data = json.loads(content)
+    time = data.get("available_times")[-1]
+    logging.info(f"Got time successfully! {date} {time}")
+    return time
+
+
+def browser_reschedule(date):
     time = get_time(date)
     driver.get(APPOINTMENT_URL)
     headers = {
@@ -188,26 +207,7 @@ def reschedule(date):
     return [title, msg]
 
 
-def get_date():
-    # Requesting to get the whole available dates
-    session = driver.get_cookie("_yatri_session")["value"]
-    script = JS_SCRIPT % (str(DATE_URL), session)
-    content = driver.execute_script(script)
-    return json.loads(content)
-
-
-def get_time(date):
-    time_url = TIME_URL % date
-    session = driver.get_cookie("_yatri_session")["value"]
-    script = JS_SCRIPT % (str(time_url), session)
-    content = driver.execute_script(script)
-    data = json.loads(content)
-    time = data.get("available_times")[-1]
-    logging.info(f"Got time successfully! {date} {time}")
-    return time
-
-
-def is_logged_in():
+def browser_is_logged_in():
     content = driver.page_source
     if (content.find("error") != -1):
         return False
@@ -231,13 +231,6 @@ def get_available_date(dates):
 
 
 if __name__ == "__main__":
-    if LOCAL_USE:
-        driver = webdriver.Chrome(service=Service(
-            ChromeDriverManager().install()))
-    else:
-        driver = webdriver.Remote(
-            command_executor=HUB_ADDRESS, options=webdriver.ChromeOptions())
-
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,
@@ -248,16 +241,26 @@ if __name__ == "__main__":
         ]
     )
 
-    notification_title = "None"
+    # Init Selenium driver
+    if LOCAL_USE:
+        driver = webdriver.Chrome(service=Service(
+            ChromeDriverManager().install()))
+    else:
+        driver = webdriver.Remote(
+            command_executor=HUB_ADDRESS, options=webdriver.ChromeOptions())
+
+    logging.info("========= Program Started =========")
+
+    final_notification_title = "None"
 
     fresh_session = True
     while True:
-        # setup
+        # Login on browser
         if fresh_session:
             t0 = time.time()
             session_up_time = 0
             Req_count = 0
-            start_process()
+            browser_login()
             fresh_session = False
 
         Req_count += 1
@@ -265,7 +268,7 @@ if __name__ == "__main__":
             msg = "-" * 60 + f"\nRequest count: {Req_count}\n"
             logging.info(msg)
 
-            dates = get_date()
+            dates = browser_get_date()
             if not dates:
                 # Ban Situation
                 msg = f"List is empty, Probably banned!\n\tSleep for {BAN_COOLDOWN_TIME} hours!\n"
@@ -276,12 +279,12 @@ if __name__ == "__main__":
                 time.sleep(BAN_COOLDOWN_TIME * hour)
                 continue
 
-            logging.info(f"Found available days, the earlist at {dates[0]}")
+            logging.info(f"Found earlist available day: {dates[0]}")
             date = get_available_date(dates)
             logging.info(f"get_available_date(dates) = {date}")
             if date:
                 # A good date to schedule for
-                notification_title, msg = reschedule(date)
+                final_notification_title, msg = browser_reschedule(date)
                 break
 
             # No date found, retry
@@ -303,16 +306,16 @@ if __name__ == "__main__":
             else:
                 sleep_duration = random.randint(
                     RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
-                logging.info("Wait {sleep_duration} seconds before next check")
+                logging.info(f"Wait {sleep_duration} seconds before next check")
                 time.sleep(sleep_duration)
         except:
             # Exception Occurred
             msg = f"Exception Occurred! Program will exit.\n"
-            notification_title = "ERROR"
+            final_notification_title = "ERROR"
             break
 
     logging.info(msg)
-    send_notification(notification_title, msg)
+    send_notification(final_notification_title, msg)
     logging.info("Closing browser...")
     driver.get(SIGN_OUT_LINK)
     driver.close()
