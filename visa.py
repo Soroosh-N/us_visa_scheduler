@@ -50,8 +50,8 @@ PUSH_TARGET_EMAIL = config['NOTIFICATION']['PUSH_TARGET_EMAIL']
 PERSONAL_PUSHER_URL = config['NOTIFICATION']['PERSONAL_PUSHER_URL']
 
 # Time Section:
-minute = 60
-hour = 60 * minute
+SECONDS_IN_MINUTE = 60
+SECONDS_IN_HOUR = 60 * SECONDS_IN_MINUTE
 # Time between steps (interactions with forms)
 STEP_TIME = 0.5
 # Time between retries/checks for available dates (seconds)
@@ -254,18 +254,19 @@ if __name__ == "__main__":
     final_notification_title = "None"
 
     fresh_session = True
+    count_request = 0
     while True:
         # Login on browser
         if fresh_session:
             t0 = time.time()
             session_up_time = 0
-            Req_count = 0
+            count_request = 0
             browser_login()
             fresh_session = False
 
-        Req_count += 1
+        count_request += 1
         try:
-            msg = "-" * 60 + f"\nRequest count: {Req_count}\n"
+            msg = "-" * 60 + f"\nRequest count: {count_request}\n"
             logging.info(msg)
 
             dates = browser_get_date()
@@ -276,7 +277,7 @@ if __name__ == "__main__":
                 send_notification("BAN", msg)
                 driver.get(SIGN_OUT_LINK)
                 fresh_session = True
-                time.sleep(BAN_COOLDOWN_TIME * hour)
+                time.sleep(BAN_COOLDOWN_TIME * SECONDS_IN_HOUR)
                 continue
 
             logging.info(f"Found earlist available day: {dates[0]}")
@@ -284,6 +285,8 @@ if __name__ == "__main__":
             logging.info(f"get_available_date(dates) = {date}")
             if date:
                 # A good date to schedule for
+                msg = "Attempting to reshcedule automatically..."
+                send_notification("FOUND", msg)
                 final_notification_title, msg = browser_reschedule(date)
                 break
 
@@ -291,22 +294,22 @@ if __name__ == "__main__":
             t1 = time.time()
             session_up_time = t1 - t0
             msg = "Current session up time: ~ {:.2f} minutes".format(
-                session_up_time/minute)
+                session_up_time/SECONDS_IN_MINUTE)
             logging.info(msg)
 
-            if session_up_time > WORK_LIMIT_TIME * hour:
-                msg = f"Taking a break after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times"
+            if session_up_time > WORK_LIMIT_TIME * SECONDS_IN_HOUR:
+                msg = f"Taking a break after {WORK_LIMIT_TIME} hours | Repeated {count_request} times"
                 logging.info(msg)
                 send_notification("REST", msg)
 
                 driver.get(SIGN_OUT_LINK)
                 fresh_session = True
 
-                time.sleep(WORK_COOLDOWN_TIME * hour)
+                time.sleep(WORK_COOLDOWN_TIME * SECONDS_IN_HOUR)
             else:
                 sleep_duration = random.randint(
                     RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
-                logging.info(f"Wait {sleep_duration} seconds before next check")
+                logging.info(f"Wait {sleep_duration/SECONDS_IN_MINUTE} minutes before next check")
                 time.sleep(sleep_duration)
         except:
             # Exception Occurred
