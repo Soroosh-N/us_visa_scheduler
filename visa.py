@@ -322,5 +322,4 @@ if __name__ == "__main__":
     send_notification(final_notification_title, msg)
     logging.info("Closing browser...")
     driver.get(SIGN_OUT_LINK)
-    driver.close()
     driver.quit()
