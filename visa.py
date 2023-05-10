@@ -228,15 +228,17 @@ if __name__ == "__main__":
     else:
         driver = webdriver.Remote(command_executor=HUB_ADDRESS, options=webdriver.ChromeOptions())
 
-    first_loop = True
-    while 1:
+    fresh_session = True
+    while True:
+        # setup
         LOG_FILE_NAME = "log_" + str(datetime.now().date()) + ".txt"
-        if first_loop:
+        if fresh_session:
             t0 = time.time()
             total_time = 0
             Req_count = 0
             start_process()
-            first_loop = False
+            fresh_session = False
+
         Req_count += 1
         try:
             msg = "-" * 60 + f"\nRequest count: {Req_count}, Log time: {datetime.today()}\n"
@@ -251,37 +253,40 @@ if __name__ == "__main__":
                 send_notification("BAN", msg)
                 driver.get(SIGN_OUT_LINK)
                 time.sleep(BAN_COOLDOWN_TIME * hour)
-                first_loop = True
+                fresh_session = True
+                continue
+
+            # Print Available dates:
+            msg = ""
+            for d in dates:
+                msg = msg + "%s" % (d.get('date')) + ", "
+            msg = "Available dates:\n"+ msg
+            print(msg)
+            info_logger(LOG_FILE_NAME, msg)
+            date = get_available_date(dates)
+            if date:
+                # A good date to schedule for
+                END_MSG_TITLE, msg = reschedule(date)
+                break
+
+            # No date found, retry
+            RETRY_WAIT_TIME = random.randint(RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
+            t1 = time.time()
+            total_time = t1 - t0
+            msg = "\nWorking Time:  ~ {:.2f} minutes".format(total_time/minute)
+            print(msg)
+            info_logger(LOG_FILE_NAME, msg)
+            if total_time > WORK_LIMIT_TIME * hour:
+                # Let program rest a little
+                send_notification("REST", f"Break-time after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times")
+                driver.get(SIGN_OUT_LINK)
+                time.sleep(WORK_COOLDOWN_TIME * hour)
+                fresh_session = True
             else:
-                # Print Available dates:
-                msg = ""
-                for d in dates:
-                    msg = msg + "%s" % (d.get('date')) + ", "
-                msg = "Available dates:\n"+ msg
+                msg = "Wait time before next check: "+ str(RETRY_WAIT_TIME)+ " seconds"
                 print(msg)
                 info_logger(LOG_FILE_NAME, msg)
-                date = get_available_date(dates)
-                if date:
-                    # A good date to schedule for
-                    END_MSG_TITLE, msg = reschedule(date)
-                    break
-                RETRY_WAIT_TIME = random.randint(RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
-                t1 = time.time()
-                total_time = t1 - t0
-                msg = "\nWorking Time:  ~ {:.2f} minutes".format(total_time/minute)
-                print(msg)
-                info_logger(LOG_FILE_NAME, msg)
-                if total_time > WORK_LIMIT_TIME * hour:
-                    # Let program rest a little
-                    send_notification("REST", f"Break-time after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times")
-                    driver.get(SIGN_OUT_LINK)
-                    time.sleep(WORK_COOLDOWN_TIME * hour)
-                    first_loop = True
-                else:
-                    msg = "Wait time before next check: "+ str(RETRY_WAIT_TIME)+ " seconds"
-                    print(msg)
-                    info_logger(LOG_FILE_NAME, msg)
-                    time.sleep(RETRY_WAIT_TIME)
+                time.sleep(RETRY_WAIT_TIME)
         except:
             # Exception Occurred
             msg = f"Exception Occurred! Program will exit.\n"
@@ -291,6 +296,6 @@ if __name__ == "__main__":
     print(msg)
     info_logger(LOG_FILE_NAME, msg)
     send_notification(END_MSG_TITLE, msg)
+    print("Closing browser...")
     driver.get(SIGN_OUT_LINK)
-    driver.stop_client()
     driver.quit()
