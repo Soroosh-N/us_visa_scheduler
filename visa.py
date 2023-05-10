@@ -3,6 +3,7 @@ import json
 import random
 import requests
 import configparser
+import logging
 from datetime import datetime
 
 from selenium import webdriver
@@ -31,7 +32,7 @@ SCHEDULE_ID = config['PERSONAL_INFO']['SCHEDULE_ID']
 PRIOD_START = config['PERSONAL_INFO']['PRIOD_START']
 PRIOD_END = config['PERSONAL_INFO']['PRIOD_END']
 # Embassy Section:
-YOUR_EMBASSY = config['PERSONAL_INFO']['YOUR_EMBASSY'] 
+YOUR_EMBASSY = config['PERSONAL_INFO']['YOUR_EMBASSY']
 EMBASSY = Embassies[YOUR_EMBASSY][0]
 FACILITY_ID = Embassies[YOUR_EMBASSY][1]
 REGEX_CONTINUE = Embassies[YOUR_EMBASSY][2]
@@ -49,8 +50,8 @@ PUSH_TARGET_EMAIL = config['NOTIFICATION']['PUSH_TARGET_EMAIL']
 PERSONAL_PUSHER_URL = config['NOTIFICATION']['PERSONAL_PUSHER_URL']
 
 # Time Section:
-minute = 60
-hour = 60 * minute
+SECONDS_IN_MINUTE = 60
+SECONDS_IN_HOUR = 60 * SECONDS_IN_MINUTE
 # Time between steps (interactions with forms)
 STEP_TIME = 0.5
 # Time between retries/checks for available dates (seconds)
@@ -68,6 +69,7 @@ LOCAL_USE = config['CHROMEDRIVER'].getboolean('LOCAL_USE')
 # Optional: HUB_ADDRESS is mandatory only when LOCAL_USE = False
 HUB_ADDRESS = config['CHROMEDRIVER']['HUB_ADDRESS']
 
+# Global variable
 SIGN_IN_LINK = f"https://ais.usvisa-info.com/{EMBASSY}/niv/users/sign_in"
 APPOINTMENT_URL = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment"
 DATE_URL = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment/days/{FACILITY_ID}.json?appointments[expedite]=false"
@@ -82,18 +84,21 @@ JS_SCRIPT = ("var req = new XMLHttpRequest();"
              "req.send(null);"
              "return req.responseText;")
 
+
 def send_notification(title, msg):
-    print(f"Sending notification!")
+    logging.info(f"Sending notification:\n{title}\n---\n{msg}\n---\n")
+
     if SENDGRID_API_KEY:
-        message = Mail(from_email=USERNAME, to_emails=USERNAME, subject=msg, html_content=msg)
+        message = Mail(from_email=USERNAME, to_emails=USERNAME,
+                       subject=msg, html_content=msg)
         try:
             sg = SendGridAPIClient(SENDGRID_API_KEY)
             response = sg.send(message)
-            print(response.status_code)
-            print(response.body)
-            print(response.headers)
+            logging.info(response.status_code)
+            logging.info(response.body)
+            logging.info(response.headers)
         except Exception as e:
-            print(e.message)
+            logging.error(e.message)
     if PUSHOVER_TOKEN:
         url = "https://api.pushover.net/1/messages.json"
         data = {
@@ -115,7 +120,6 @@ def send_notification(title, msg):
 
 
 def auto_action(label, find_by, el_type, action, value, sleep_time=0):
-    print("\t"+ label +":", end="")
     # Find Element By
     match find_by.lower():
         case 'id':
@@ -136,26 +140,50 @@ def auto_action(label, find_by, el_type, action, value, sleep_time=0):
             item.click()
         case _:
             return 0
-    print("\t\tCheck!")
+    logging.info(f"\t{label}:\t\tCheck!")
     if sleep_time:
         time.sleep(sleep_time)
 
 
-def start_process():
+def browser_login():
     # Bypass reCAPTCHA
     driver.get(SIGN_IN_LINK)
     time.sleep(STEP_TIME)
     Wait(driver, 60).until(EC.presence_of_element_located((By.NAME, "commit")))
-    auto_action("Click bounce", "xpath", '//a[@class="down-arrow bounce"]', "click", "", STEP_TIME)
+    auto_action("Click bounce", "xpath",
+                '//a[@class="down-arrow bounce"]', "click", "", STEP_TIME)
     auto_action("Email", "id", "user_email", "send", USERNAME, STEP_TIME)
     auto_action("Password", "id", "user_password", "send", PASSWORD, STEP_TIME)
     auto_action("Privacy", "class", "icheckbox", "click", "", STEP_TIME)
     auto_action("Enter Panel", "name", "commit", "click", "", STEP_TIME)
-    Wait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//a[contains(text(), '" + REGEX_CONTINUE + "')]")))
-    print("\n\tlogin successful!\n")
+    Wait(driver, 60).until(EC.presence_of_element_located(
+        (By.XPATH, "//a[contains(text(), '" + REGEX_CONTINUE + "')]")))
+    logging.info("login successful!\n")
 
-def reschedule(date):
-    time = get_time(date)
+
+def browser_get_date():
+    # Requesting to get the whole available dates
+    session = driver.get_cookie("_yatri_session")["value"]
+    script = JS_SCRIPT % (DATE_URL, session)
+    content = driver.execute_script(script)
+    return json.loads(content)
+
+
+def browser_get_time(date):
+    time_url = TIME_URL % date
+    session = driver.get_cookie("_yatri_session")["value"]
+    script = JS_SCRIPT % (time_url, session)
+    logging.info("browser_get_time")
+    logging.info(script)
+    content = driver.execute_script(script)
+    data = json.loads(content)
+    time = data.get("available_times")[-1]
+    logging.info(f"Got time successfully! {date} {time}")
+    return time
+
+
+def browser_reschedule(date):
+    time = browser_get_time(date)
     driver.get(APPOINTMENT_URL)
     headers = {
         "User-Agent": driver.execute_script("return navigator.userAgent;"),
@@ -172,7 +200,7 @@ def reschedule(date):
         "appointments[consulate_appointment][time]": time,
     }
     r = requests.post(APPOINTMENT_URL, headers=headers, data=data)
-    if(r.text.find('Successfully Scheduled') != -1):
+    if (r.text.find('Successfully Scheduled') != -1):
         title = "SUCCESS"
         msg = f"Rescheduled Successfully! {date} {time}"
     else:
@@ -181,124 +209,131 @@ def reschedule(date):
     return [title, msg]
 
 
-def get_date():
-    # Requesting to get the whole available dates
-    session = driver.get_cookie("_yatri_session")["value"]
-    script = JS_SCRIPT % (str(DATE_URL), session)
-    content = driver.execute_script(script)
-    return json.loads(content)
-
-def get_time(date):
-    time_url = TIME_URL % date
-    session = driver.get_cookie("_yatri_session")["value"]
-    script = JS_SCRIPT % (str(time_url), session)
-    content = driver.execute_script(script)
-    data = json.loads(content)
-    time = data.get("available_times")[-1]
-    print(f"Got time successfully! {date} {time}")
-    return time
-
-
-def is_logged_in():
+def browser_is_logged_in():
     content = driver.page_source
-    if(content.find("error") != -1):
+    if (content.find("error") != -1):
         return False
     return True
 
 
-def get_available_date(dates):
+def get_better_date(dates):
     # Evaluation of different available dates
     def is_in_period(date, PSD, PED):
         new_date = datetime.strptime(date, "%Y-%m-%d")
-        result = ( PED > new_date and new_date > PSD )
-        # print(f'{new_date.date()} : {result}', end=", ")
+        result = (PED > new_date and new_date > PSD)
         return result
-    
+
     PED = datetime.strptime(PRIOD_END, "%Y-%m-%d")
     PSD = datetime.strptime(PRIOD_START, "%Y-%m-%d")
     for d in dates:
         date = d.get('date')
         if is_in_period(date, PSD, PED):
             return date
-    print(f"\n\nNo available dates between ({PSD.date()}) and ({PED.date()})!")
-
-
-def info_logger(file_path, log):
-    # file_path: e.g. "log.txt"
-    with open(file_path, "a") as file:
-        file.write(str(datetime.now().time()) + ":\n" + log + "\n")
-
-
-if LOCAL_USE:
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
-else:
-    driver = webdriver.Remote(command_executor=HUB_ADDRESS, options=webdriver.ChromeOptions())
+    return None
 
 
 if __name__ == "__main__":
-    first_loop = True
-    while 1:
-        LOG_FILE_NAME = "log_" + str(datetime.now().date()) + ".txt"
-        if first_loop:
-            t0 = time.time()
-            total_time = 0
-            Req_count = 0
-            start_process()
-            first_loop = False
-        Req_count += 1
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler("log.txt"),
+            # logging.StreamHandler()
+        ]
+    )
+
+    # Init Selenium driver
+    if LOCAL_USE:
+        driver = webdriver.Chrome(service=Service(
+            ChromeDriverManager().install()))
+    else:
+        driver = webdriver.Remote(
+            command_executor=HUB_ADDRESS, options=webdriver.ChromeOptions())
+
+    logging.info("========= Program Started =========")
+
+    final_notification_title = "None"
+
+    should_login = True
+    count_request = 0
+    time_session_started = 0
+    while True:
+        count_request += 1
+        msg = "-" * 60 + f"\nRequest {count_request}\n"
+        print(msg)
+        logging.info(msg)
+
         try:
-            msg = "-" * 60 + f"\nRequest count: {Req_count}, Log time: {datetime.today()}\n"
-            print(msg)
-            info_logger(LOG_FILE_NAME, msg)
-            dates = get_date()
+            if should_login:
+                time_session_started = time.time()
+                browser_login()
+                should_login = False
+
+            dates = browser_get_date()
             if not dates:
                 # Ban Situation
-                msg = f"List is empty, Probabely banned!\n\tSleep for {BAN_COOLDOWN_TIME} hours!\n"
+                msg = f"List is empty, Probably banned!\n\tSleep for {BAN_COOLDOWN_TIME} hours!\n"
                 print(msg)
-                info_logger(LOG_FILE_NAME, msg)
+                logging.info(msg)
                 send_notification("BAN", msg)
+
                 driver.get(SIGN_OUT_LINK)
-                time.sleep(BAN_COOLDOWN_TIME * hour)
-                first_loop = True
+                should_login = True
+
+                time.sleep(BAN_COOLDOWN_TIME * SECONDS_IN_HOUR)
+                continue
+
+            logging.info(f"Found earlist available days: {dates[:10]}")
+            date = get_better_date(dates)
+            logging.info(f"get_available_date(dates) = {date}")
+            if date:
+                msg = "Found a better date. Attempting to reschedule automatically..."
+                print(msg)
+                logging.info(msg)
+                send_notification("FOUND", msg)
+
+                final_notification_title, msg = browser_reschedule(date)
+                break
+
+            # No better date found, will retry
+            msg = "No better date. Retrying..."
+            print(msg)
+            logging.info(msg)
+
+            session_up_time = time.time() - time_session_started
+            logging.info(f"session_up_time: {session_up_time/SECONDS_IN_MINUTE:.2f} minutes")
+
+            if session_up_time > WORK_LIMIT_TIME * SECONDS_IN_HOUR:
+                # Session too long, wait a few hours and start a new session
+                msg = f"Taking a break after {WORK_LIMIT_TIME} hours"
+                print(msg)
+                logging.info(msg)
+                send_notification("REST", msg)
+
+                driver.get(SIGN_OUT_LINK)
+                should_login = True
+
+                time.sleep(WORK_COOLDOWN_TIME * SECONDS_IN_HOUR)
             else:
-                # Print Available dates:
-                msg = ""
-                for d in dates:
-                    msg = msg + "%s" % (d.get('date')) + ", "
-                msg = "Available dates:\n"+ msg
+                sleep_duration = random.randint(
+                    RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
+                msg = f"Wait {sleep_duration/SECONDS_IN_MINUTE:.2f} minutes before next check"
                 print(msg)
-                info_logger(LOG_FILE_NAME, msg)
-                date = get_available_date(dates)
-                if date:
-                    # A good date to schedule for
-                    END_MSG_TITLE, msg = reschedule(date)
-                    break
-                RETRY_WAIT_TIME = random.randint(RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
-                t1 = time.time()
-                total_time = t1 - t0
-                msg = "\nWorking Time:  ~ {:.2f} minutes".format(total_time/minute)
-                print(msg)
-                info_logger(LOG_FILE_NAME, msg)
-                if total_time > WORK_LIMIT_TIME * hour:
-                    # Let program rest a little
-                    send_notification("REST", f"Break-time after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times")
-                    driver.get(SIGN_OUT_LINK)
-                    time.sleep(WORK_COOLDOWN_TIME * hour)
-                    first_loop = True
-                else:
-                    msg = "Retry Wait Time: "+ str(RETRY_WAIT_TIME)+ " seconds"
-                    print(msg)
-                    info_logger(LOG_FILE_NAME, msg)
-                    time.sleep(RETRY_WAIT_TIME)
-        except:
-            # Exception Occured
-            msg = f"Break the loop after exception!\n"
-            END_MSG_TITLE = "EXCEPTION"
+                logging.info(msg)
+
+                time.sleep(sleep_duration)
+
+        except Exception as e:
+            final_notification_title = "ERROR"
+            msg = "Exception Occurred! Program will exit.\n"
+            logging.error(e)
             break
 
-print(msg)
-info_logger(LOG_FILE_NAME, msg)
-send_notification(END_MSG_TITLE, msg)
-driver.get(SIGN_OUT_LINK)
-driver.stop_client()
-driver.quit()
+    print(final_notification_title, msg)
+    logging.info((final_notification_title, msg))
+    send_notification(final_notification_title, msg)
+
+    logging.info("Closing browser...")
+    driver.get(SIGN_OUT_LINK)
+    driver.quit()
