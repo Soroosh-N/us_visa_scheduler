@@ -52,6 +52,8 @@ In summary, you will need 1) a Pushover account and 2) Create an Application und
 
 ### Email notification using SendGrid
 
+TODO
+
 ## How to add new embassy
 There are too many embassies on the world, this program cannot support all of them. You can easily add the missing embassies yourself.
 
