@@ -40,7 +40,7 @@ To stop the program, just close the terminal or press Ctrl+C.
 
 ## Configure notification
 
-You can configure to receive notification when the program finds a date and attempts rescheduling. To do this, you should configure at least one of the notification methods in the `config.ini` file.
+You can configure to receive notification when the program finds a date and attempts rescheduling. To do this, you should configure at least one of the notification methods in the `config.ini` file. You can use both of them at the same time.
 
 ### Phone notification using Pushover
 
