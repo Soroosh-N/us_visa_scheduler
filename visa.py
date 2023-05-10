@@ -285,7 +285,7 @@ if __name__ == "__main__":
             logging.info(f"get_available_date(dates) = {date}")
             if date:
                 # A good date to schedule for
-                msg = "Attempting to reshcedule automatically..."
+                msg = "Attempting to reschedule automatically..."
                 send_notification("FOUND", msg)
                 final_notification_title, msg = browser_reschedule(date)
                 break
@@ -309,7 +309,8 @@ if __name__ == "__main__":
             else:
                 sleep_duration = random.randint(
                     RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
-                logging.info(f"Wait {sleep_duration/SECONDS_IN_MINUTE} minutes before next check")
+                logging.info(
+                    f"Wait {sleep_duration/SECONDS_IN_MINUTE} minutes before next check")
                 time.sleep(sleep_duration)
         except:
             # Exception Occurred
