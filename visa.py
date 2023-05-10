@@ -3,6 +3,7 @@ import json
 import random
 import requests
 import configparser
+import logging
 from datetime import datetime
 
 from selenium import webdriver
@@ -68,6 +69,7 @@ LOCAL_USE = config['CHROMEDRIVER'].getboolean('LOCAL_USE')
 # Optional: HUB_ADDRESS is mandatory only when LOCAL_USE = False
 HUB_ADDRESS = config['CHROMEDRIVER']['HUB_ADDRESS']
 
+# Global variable
 SIGN_IN_LINK = f"https://ais.usvisa-info.com/{EMBASSY}/niv/users/sign_in"
 APPOINTMENT_URL = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment"
 DATE_URL = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment/days/{FACILITY_ID}.json?appointments[expedite]=false"
@@ -83,17 +85,18 @@ JS_SCRIPT = ("var req = new XMLHttpRequest();"
              "return req.responseText;")
 
 def send_notification(title, msg):
-    print(f"Sending notification!")
+    logging.info(f"Sending notification:\n{title}\n---\n{msg}\n---\n")
+
     if SENDGRID_API_KEY:
         message = Mail(from_email=USERNAME, to_emails=USERNAME, subject=msg, html_content=msg)
         try:
             sg = SendGridAPIClient(SENDGRID_API_KEY)
             response = sg.send(message)
-            print(response.status_code)
-            print(response.body)
-            print(response.headers)
+            logging.info(response.status_code)
+            logging.info(response.body)
+            logging.info(response.headers)
         except Exception as e:
-            print(e.message)
+            logging.error(e.message)
     if PUSHOVER_TOKEN:
         url = "https://api.pushover.net/1/messages.json"
         data = {
@@ -114,7 +117,6 @@ def send_notification(title, msg):
         requests.post(url, data)
 
 def auto_action(label, find_by, el_type, action, value, sleep_time=0):
-    print("\t"+ label +":", end="")
     # Find Element By
     match find_by.lower():
         case 'id':
@@ -135,7 +137,7 @@ def auto_action(label, find_by, el_type, action, value, sleep_time=0):
             item.click()
         case _:
             return 0
-    print("\t\tCheck!")
+    logging.info(f"\t{label}:\t\tCheck!")
     if sleep_time:
         time.sleep(sleep_time)
 
@@ -150,7 +152,7 @@ def start_process():
     auto_action("Privacy", "class", "icheckbox", "click", "", STEP_TIME)
     auto_action("Enter Panel", "name", "commit", "click", "", STEP_TIME)
     Wait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//a[contains(text(), '" + REGEX_CONTINUE + "')]")))
-    print("\n\tlogin successful!\n")
+    logging.info("\n\tlogin successful!\n")
 
 def reschedule(date):
     time = get_time(date)
@@ -192,7 +194,7 @@ def get_time(date):
     content = driver.execute_script(script)
     data = json.loads(content)
     time = data.get("available_times")[-1]
-    print(f"Got time successfully! {date} {time}")
+    logging.info(f"Got time successfully! {date} {time}")
     return time
 
 def is_logged_in():
@@ -206,7 +208,6 @@ def get_available_date(dates):
     def is_in_period(date, PSD, PED):
         new_date = datetime.strptime(date, "%Y-%m-%d")
         result = ( PED > new_date and new_date > PSD )
-        # print(f'{new_date.date()} : {result}', end=", ")
         return result
     
     PED = datetime.strptime(PRIOD_END, "%Y-%m-%d")
@@ -215,12 +216,8 @@ def get_available_date(dates):
         date = d.get('date')
         if is_in_period(date, PSD, PED):
             return date
-    print(f"\n\nNo available dates between ({PSD.date()}) and ({PED.date()})!")
-
-def info_logger(file_path, log):
-    # file_path: e.g. "log.txt"
-    with open(file_path, "a") as file:
-        file.write(str(datetime.now().time()) + ":\n" + log + "\n")
+    logging.info(f"No available dates between ({PSD.date()}) and ({PED.date()})!")
+    return None
 
 if __name__ == "__main__":
     if LOCAL_USE:
@@ -228,10 +225,21 @@ if __name__ == "__main__":
     else:
         driver = webdriver.Remote(command_executor=HUB_ADDRESS, options=webdriver.ChromeOptions())
 
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler("log.txt"),
+            logging.StreamHandler()
+        ]
+    )
+
+    notification_title = "None"
+
     fresh_session = True
     while True:
         # setup
-        LOG_FILE_NAME = "log_" + str(datetime.now().date()) + ".txt"
         if fresh_session:
             t0 = time.time()
             total_time = 0
@@ -241,32 +249,26 @@ if __name__ == "__main__":
 
         Req_count += 1
         try:
-            msg = "-" * 60 + f"\nRequest count: {Req_count}, Log time: {datetime.today()}\n"
-            print(msg)
-            info_logger(LOG_FILE_NAME, msg)
+            msg = "-" * 60 + f"\nRequest count: {Req_count}\n"
+            logging.info(msg)
+
             dates = get_date()
             if not dates:
                 # Ban Situation
                 msg = f"List is empty, Probably banned!\n\tSleep for {BAN_COOLDOWN_TIME} hours!\n"
-                print(msg)
-                info_logger(LOG_FILE_NAME, msg)
+                logging.info(msg)
                 send_notification("BAN", msg)
                 driver.get(SIGN_OUT_LINK)
-                time.sleep(BAN_COOLDOWN_TIME * hour)
                 fresh_session = True
+                time.sleep(BAN_COOLDOWN_TIME * hour)
                 continue
 
-            # Print Available dates:
-            msg = ""
-            for d in dates:
-                msg = msg + "%s" % (d.get('date')) + ", "
-            msg = "Available dates:\n"+ msg
-            print(msg)
-            info_logger(LOG_FILE_NAME, msg)
+            logging.info(f"Found available days, the earlist at {dates[0]}")
             date = get_available_date(dates)
+            logging.info(f"get_available_date(dates) = {date}")
             if date:
                 # A good date to schedule for
-                END_MSG_TITLE, msg = reschedule(date)
+                notification_title, msg = reschedule(date)
                 break
 
             # No date found, retry
@@ -274,8 +276,7 @@ if __name__ == "__main__":
             t1 = time.time()
             total_time = t1 - t0
             msg = "\nWorking Time:  ~ {:.2f} minutes".format(total_time/minute)
-            print(msg)
-            info_logger(LOG_FILE_NAME, msg)
+            logging.info(msg)
             if total_time > WORK_LIMIT_TIME * hour:
                 # Let program rest a little
                 send_notification("REST", f"Break-time after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times")
@@ -284,18 +285,16 @@ if __name__ == "__main__":
                 fresh_session = True
             else:
                 msg = "Wait time before next check: "+ str(RETRY_WAIT_TIME)+ " seconds"
-                print(msg)
-                info_logger(LOG_FILE_NAME, msg)
+                logging.info(msg)
                 time.sleep(RETRY_WAIT_TIME)
         except:
             # Exception Occurred
             msg = f"Exception Occurred! Program will exit.\n"
-            END_MSG_TITLE = "EXCEPTION"
+            notification_title = "ERROR"
             break
 
-    print(msg)
-    info_logger(LOG_FILE_NAME, msg)
-    send_notification(END_MSG_TITLE, msg)
-    print("Closing browser...")
+    logging.info(msg)
+    send_notification(notification_title, msg)
+    logging.info("Closing browser...")
     driver.get(SIGN_OUT_LINK)
     driver.quit()
