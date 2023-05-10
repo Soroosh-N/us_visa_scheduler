@@ -222,12 +222,12 @@ def info_logger(file_path, log):
     with open(file_path, "a") as file:
         file.write(str(datetime.now().time()) + ":\n" + log + "\n")
 
-if LOCAL_USE:
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
-else:
-    driver = webdriver.Remote(command_executor=HUB_ADDRESS, options=webdriver.ChromeOptions())
-
 if __name__ == "__main__":
+    if LOCAL_USE:
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+    else:
+        driver = webdriver.Remote(command_executor=HUB_ADDRESS, options=webdriver.ChromeOptions())
+
     first_loop = True
     while 1:
         LOG_FILE_NAME = "log_" + str(datetime.now().date()) + ".txt"
@@ -278,19 +278,19 @@ if __name__ == "__main__":
                     time.sleep(WORK_COOLDOWN_TIME * hour)
                     first_loop = True
                 else:
-                    msg = "Time since next date check: "+ str(RETRY_WAIT_TIME)+ " seconds"
+                    msg = "Wait time before next check: "+ str(RETRY_WAIT_TIME)+ " seconds"
                     print(msg)
                     info_logger(LOG_FILE_NAME, msg)
                     time.sleep(RETRY_WAIT_TIME)
         except:
             # Exception Occurred
-            msg = f"Exception Occurred! Program will exit\n"
+            msg = f"Exception Occurred! Program will exit.\n"
             END_MSG_TITLE = "EXCEPTION"
             break
 
-print(msg)
-info_logger(LOG_FILE_NAME, msg)
-send_notification(END_MSG_TITLE, msg)
-driver.get(SIGN_OUT_LINK)
-driver.stop_client()
-driver.quit()
+    print(msg)
+    info_logger(LOG_FILE_NAME, msg)
+    send_notification(END_MSG_TITLE, msg)
+    driver.get(SIGN_OUT_LINK)
+    driver.stop_client()
+    driver.quit()
