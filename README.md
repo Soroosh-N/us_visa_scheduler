@@ -1,5 +1,5 @@
 # visa_rescheduler
-The visa_rescheduler is a bot for monitoring US VISA (usvisa-info.com) appointment available dates. It can notify you when a new date becomes available.
+The `visa_rescheduler` is a bot for monitoring US VISA (usvisa-info.com) appointment available dates. It can automatically reschedule to the earliest date it finds on your behalf, and optionally notify you when that happens.
 
 ## Prerequisites
 - Having a US VISA appointment scheduled already.
@@ -40,7 +40,7 @@ To stop the program, just close the terminal or press Ctrl+C.
 
 ## Configure notification
 
-It's important to get realtime notification when the program finds a available date. To do this, you should configure at least one of the notification methods in the `config.ini` file. You can use both of them at the same time.
+You can configure to receive notification when the program finds a date and attempts rescheduling. To do this, you should configure at least one of the notification methods in the `config.ini` file.
 
 ### Phone notification using Pushover
 

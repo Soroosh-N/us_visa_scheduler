@@ -113,7 +113,6 @@ def send_notification(title, msg):
         }
         requests.post(url, data)
 
-
 def auto_action(label, find_by, el_type, action, value, sleep_time=0):
     print("\t"+ label +":", end="")
     # Find Element By
@@ -139,7 +138,6 @@ def auto_action(label, find_by, el_type, action, value, sleep_time=0):
     print("\t\tCheck!")
     if sleep_time:
         time.sleep(sleep_time)
-
 
 def start_process():
     # Bypass reCAPTCHA
@@ -180,7 +178,6 @@ def reschedule(date):
         msg = f"Reschedule Failed!!! {date} {time}"
     return [title, msg]
 
-
 def get_date():
     # Requesting to get the whole available dates
     session = driver.get_cookie("_yatri_session")["value"]
@@ -198,13 +195,11 @@ def get_time(date):
     print(f"Got time successfully! {date} {time}")
     return time
 
-
 def is_logged_in():
     content = driver.page_source
     if(content.find("error") != -1):
         return False
     return True
-
 
 def get_available_date(dates):
     # Evaluation of different available dates
@@ -222,18 +217,15 @@ def get_available_date(dates):
             return date
     print(f"\n\nNo available dates between ({PSD.date()}) and ({PED.date()})!")
 
-
 def info_logger(file_path, log):
     # file_path: e.g. "log.txt"
     with open(file_path, "a") as file:
         file.write(str(datetime.now().time()) + ":\n" + log + "\n")
 
-
 if LOCAL_USE:
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
 else:
     driver = webdriver.Remote(command_executor=HUB_ADDRESS, options=webdriver.ChromeOptions())
-
 
 if __name__ == "__main__":
     first_loop = True
@@ -253,7 +245,7 @@ if __name__ == "__main__":
             dates = get_date()
             if not dates:
                 # Ban Situation
-                msg = f"List is empty, Probabely banned!\n\tSleep for {BAN_COOLDOWN_TIME} hours!\n"
+                msg = f"List is empty, Probably banned!\n\tSleep for {BAN_COOLDOWN_TIME} hours!\n"
                 print(msg)
                 info_logger(LOG_FILE_NAME, msg)
                 send_notification("BAN", msg)
@@ -286,13 +278,13 @@ if __name__ == "__main__":
                     time.sleep(WORK_COOLDOWN_TIME * hour)
                     first_loop = True
                 else:
-                    msg = "Retry Wait Time: "+ str(RETRY_WAIT_TIME)+ " seconds"
+                    msg = "Time since next date check: "+ str(RETRY_WAIT_TIME)+ " seconds"
                     print(msg)
                     info_logger(LOG_FILE_NAME, msg)
                     time.sleep(RETRY_WAIT_TIME)
         except:
-            # Exception Occured
-            msg = f"Break the loop after exception!\n"
+            # Exception Occurred
+            msg = f"Exception Occurred! Program will exit\n"
             END_MSG_TITLE = "EXCEPTION"
             break
 
