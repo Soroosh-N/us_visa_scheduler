@@ -35,6 +35,8 @@ YOUR_EMBASSY = config['PERSONAL_INFO']['YOUR_EMBASSY']
 EMBASSY = Embassies[YOUR_EMBASSY][0]
 FACILITY_ID = Embassies[YOUR_EMBASSY][1]
 REGEX_CONTINUE = Embassies[YOUR_EMBASSY][2]
+SUCCESS_RESCHEDULE_MESSAGE = Embassies[YOUR_EMBASSY][3]
+ERROR_RESCHEDULE_MESSAGE = Embassies[YOUR_EMBASSY][4]
 
 # Notification:
 # Get email notifications via https://sendgrid.com/ (Optional)
@@ -152,11 +154,15 @@ def start_process():
     auto_action("Privacy", "class", "icheckbox", "click", "", STEP_TIME)
     auto_action("Enter Panel", "name", "commit", "click", "", STEP_TIME)
     Wait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//a[contains(text(), '" + REGEX_CONTINUE + "')]")))
+    # Continue to reschedule page
+    driver.get(APPOINTMENT_URL)
+    Wait(driver, 60).until(EC.presence_of_element_located((By.NAME, "commit")))
+    auto_action("Continue to reschedule page", "name", "commit", "click", "", STEP_TIME)
+    Wait(driver, 60).until(EC.presence_of_element_located((By.ID, "appointments_submit")))
     print("\n\tlogin successful!\n")
 
 def reschedule(date):
     time = get_time(date)
-    driver.get(APPOINTMENT_URL)
     headers = {
         "User-Agent": driver.execute_script("return navigator.userAgent;"),
         "Referer": APPOINTMENT_URL,
@@ -172,12 +178,15 @@ def reschedule(date):
         "appointments[consulate_appointment][time]": time,
     }
     r = requests.post(APPOINTMENT_URL, headers=headers, data=data)
-    if(r.text.find('Successfully Scheduled') != -1):
+    if(r.text.find(SUCCESS_RESCHEDULE_MESSAGE) != -1):
         title = "SUCCESS"
         msg = f"Rescheduled Successfully! {date} {time}"
     else:
         title = "FAIL"
-        msg = f"Reschedule Failed!!! {date} {time}"
+        if (r.text.find(ERROR_RESCHEDULE_MESSAGE)):
+            msg = f"Reschedule Failed!!! {date} {time} \n Seu agendamento não pode ser realizado. Por favor, selecione uma opção válida."
+        else:
+            msg = f"Reschedule Failed!!! {date} {time} \n {r.text}"
     return [title, msg]
 
 
@@ -210,7 +219,7 @@ def get_available_date(dates):
     # Evaluation of different available dates
     def is_in_period(date, PSD, PED):
         new_date = datetime.strptime(date, "%Y-%m-%d")
-        result = ( PED > new_date and new_date > PSD )
+        result = ( PED >= new_date and new_date >= PSD )
         # print(f'{new_date.date()} : {result}', end=", ")
         return result
     
@@ -290,9 +299,9 @@ if __name__ == "__main__":
                     print(msg)
                     info_logger(LOG_FILE_NAME, msg)
                     time.sleep(RETRY_WAIT_TIME)
-        except:
+        except Exception as e:
             # Exception Occured
-            msg = f"Break the loop after exception!\n"
+            msg = f"Break the loop after exception!\n {e}"
             END_MSG_TITLE = "EXCEPTION"
             break
 
