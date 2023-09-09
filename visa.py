@@ -7,6 +7,7 @@ from datetime import datetime
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait as Wait
 from selenium.webdriver.common.by import By
@@ -27,11 +28,12 @@ PASSWORD = config['PERSONAL_INFO']['PASSWORD']
 # Find SCHEDULE_ID in re-schedule page link:
 # https://ais.usvisa-info.com/en-am/niv/schedule/{SCHEDULE_ID}/appointment
 SCHEDULE_ID = config['PERSONAL_INFO']['SCHEDULE_ID']
+GROUP_ID = config['PERSONAL_INFO']['GROUP_ID']
 # Target Period:
 PRIOD_START = config['PERSONAL_INFO']['PRIOD_START']
 PRIOD_END = config['PERSONAL_INFO']['PRIOD_END']
 # Embassy Section:
-YOUR_EMBASSY = config['PERSONAL_INFO']['YOUR_EMBASSY'] 
+YOUR_EMBASSY = config['PERSONAL_INFO']['YOUR_EMBASSY']
 EMBASSY = Embassies[YOUR_EMBASSY][0]
 FACILITY_ID = Embassies[YOUR_EMBASSY][1]
 REGEX_CONTINUE = Embassies[YOUR_EMBASSY][2]
@@ -47,6 +49,9 @@ PERSONAL_SITE_USER = config['NOTIFICATION']['PERSONAL_SITE_USER']
 PERSONAL_SITE_PASS = config['NOTIFICATION']['PERSONAL_SITE_PASS']
 PUSH_TARGET_EMAIL = config['NOTIFICATION']['PUSH_TARGET_EMAIL']
 PERSONAL_PUSHER_URL = config['NOTIFICATION']['PERSONAL_PUSHER_URL']
+# Get push notifications via Telegram
+TELEGRAM_TOKEN = config['NOTIFICATION']['TELEGRAM_TOKEN']
+TELEGRAM_CHAT_ID = config['NOTIFICATION']['TELEGRAM_CHAT_ID']
 
 # Time Section:
 minute = 60
@@ -72,6 +77,7 @@ SIGN_IN_LINK = f"https://ais.usvisa-info.com/{EMBASSY}/niv/users/sign_in"
 APPOINTMENT_URL = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment"
 DATE_URL = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment/days/{FACILITY_ID}.json?appointments[expedite]=false"
 TIME_URL = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment/times/{FACILITY_ID}.json?date=%s&appointments[expedite]=false"
+MAIN_URL = f"https://ais.usvisa-info.com/en-ca/niv/groups/{GROUP_ID}"
 SIGN_OUT_LINK = f"https://ais.usvisa-info.com/{EMBASSY}/niv/users/sign_out"
 
 JS_SCRIPT = ("var req = new XMLHttpRequest();"
@@ -82,10 +88,18 @@ JS_SCRIPT = ("var req = new XMLHttpRequest();"
              "req.send(null);"
              "return req.responseText;")
 
+
+def notify_in_telegram(msg):
+    url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
+    parameters = {'chat_id': TELEGRAM_CHAT_ID, 'text': msg}
+    return requests.post(url, parameters)
+
+
 def send_notification(title, msg):
     print(f"Sending notification!")
     if SENDGRID_API_KEY:
-        message = Mail(from_email=USERNAME, to_emails=USERNAME, subject=msg, html_content=msg)
+        message = Mail(from_email=USERNAME, to_emails=USERNAME,
+                       subject=msg, html_content=msg)
         try:
             sg = SendGridAPIClient(SENDGRID_API_KEY)
             response = sg.send(message)
@@ -115,7 +129,7 @@ def send_notification(title, msg):
 
 
 def auto_action(label, find_by, el_type, action, value, sleep_time=0):
-    print("\t"+ label +":", end="")
+    print("\t" + label + ":", end="")
     # Find Element By
     match find_by.lower():
         case 'id':
@@ -146,13 +160,17 @@ def start_process():
     driver.get(SIGN_IN_LINK)
     time.sleep(STEP_TIME)
     Wait(driver, 60).until(EC.presence_of_element_located((By.NAME, "commit")))
-    auto_action("Click bounce", "xpath", '//a[@class="down-arrow bounce"]', "click", "", STEP_TIME)
+    auto_action("Click bounce", "xpath",
+                '//a[@class="down-arrow bounce"]', "click", "", STEP_TIME)
     auto_action("Email", "id", "user_email", "send", USERNAME, STEP_TIME)
     auto_action("Password", "id", "user_password", "send", PASSWORD, STEP_TIME)
     auto_action("Privacy", "class", "icheckbox", "click", "", STEP_TIME)
     auto_action("Enter Panel", "name", "commit", "click", "", STEP_TIME)
-    Wait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//a[contains(text(), '" + REGEX_CONTINUE + "')]")))
+    Wait(driver, 60).until(EC.presence_of_element_located(
+        (By.XPATH, "//a[contains(text(), '" + REGEX_CONTINUE + "')]")))
     print("\n\tlogin successful!\n")
+    notify_in_telegram('The bot has started successfully')
+
 
 def reschedule(date):
     time = get_time(date)
@@ -178,6 +196,7 @@ def reschedule(date):
     else:
         title = "FAIL"
         msg = f"Reschedule Failed!!! {date} {time}"
+    notify_in_telegram(msg)
     return [title, msg]
 
 
@@ -187,6 +206,7 @@ def get_date():
     script = JS_SCRIPT % (str(DATE_URL), session)
     content = driver.execute_script(script)
     return json.loads(content)
+
 
 def get_time(date):
     time_url = TIME_URL % date
@@ -210,10 +230,10 @@ def get_available_date(dates):
     # Evaluation of different available dates
     def is_in_period(date, PSD, PED):
         new_date = datetime.strptime(date, "%Y-%m-%d")
-        result = ( PED > new_date and new_date > PSD )
+        result = (PED > new_date and new_date > PSD)
         # print(f'{new_date.date()} : {result}', end=", ")
         return result
-    
+
     PED = datetime.strptime(PRIOD_END, "%Y-%m-%d")
     PSD = datetime.strptime(PRIOD_START, "%Y-%m-%d")
     for d in dates:
@@ -224,21 +244,26 @@ def get_available_date(dates):
 
 
 def info_logger(file_path, log):
-    # file_path: e.g. "log.txt"
     with open(file_path, "a") as file:
         file.write(str(datetime.now().time()) + ":\n" + log + "\n")
 
 
-if LOCAL_USE:
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
-else:
-    driver = webdriver.Remote(command_executor=HUB_ADDRESS, options=webdriver.ChromeOptions())
+chrome_options = Options()
+# chrome_options.add_argument("--disable-extensions")
+# chrome_options.add_argument("--disable-gpu")
+# chrome_options.add_argument("--no-sandbox") # linux only
+# if os.getenv('HEADLESS') == 'True':
+# Comment for visualy debugging
+chrome_options.add_argument("--headless")
+# chrome_options.add_argument('--version', '115.0.5790.114')
 
+# Initialize the chromediver (must be installed and in PATH)
+driver = webdriver.Chrome(options=chrome_options)
 
 if __name__ == "__main__":
     first_loop = True
     while 1:
-        LOG_FILE_NAME = "log_" + str(datetime.now().date()) + ".txt"
+        LOG_FILE_NAME = "logs/" + "log_" + str(datetime.now().date()) + ".log"
         if first_loop:
             t0 = time.time()
             total_time = 0
@@ -247,14 +272,16 @@ if __name__ == "__main__":
             first_loop = False
         Req_count += 1
         try:
-            msg = "-" * 60 + f"\nRequest count: {Req_count}, Log time: {datetime.today()}\n"
+            msg = "-" * 60 + \
+                f"\nRequest count: {Req_count}, Log time: {datetime.today()}\n"
             print(msg)
             info_logger(LOG_FILE_NAME, msg)
             dates = get_date()
             if not dates:
                 # Ban Situation
-                msg = f"List is empty, Probabely banned!\n\tSleep for {BAN_COOLDOWN_TIME} hours!\n"
+                msg = f"List is empty, Probably banned!\n\tSleep for {BAN_COOLDOWN_TIME} hours!\n"
                 print(msg)
+                notify_in_telegram(msg)
                 info_logger(LOG_FILE_NAME, msg)
                 send_notification("BAN", msg)
                 driver.get(SIGN_OUT_LINK)
@@ -265,7 +292,7 @@ if __name__ == "__main__":
                 msg = ""
                 for d in dates:
                     msg = msg + "%s" % (d.get('date')) + ", "
-                msg = "Available dates:\n"+ msg
+                msg = "Available dates:\n" + msg
                 print(msg)
                 info_logger(LOG_FILE_NAME, msg)
                 date = get_available_date(dates)
@@ -273,20 +300,24 @@ if __name__ == "__main__":
                     # A good date to schedule for
                     END_MSG_TITLE, msg = reschedule(date)
                     break
-                RETRY_WAIT_TIME = random.randint(RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
+                RETRY_WAIT_TIME = random.randint(
+                    RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
                 t1 = time.time()
                 total_time = t1 - t0
-                msg = "\nWorking Time:  ~ {:.2f} minutes".format(total_time/minute)
+                msg = "\nWorking Time:  ~ {:.2f} minutes".format(
+                    total_time/minute)
                 print(msg)
                 info_logger(LOG_FILE_NAME, msg)
                 if total_time > WORK_LIMIT_TIME * hour:
                     # Let program rest a little
-                    send_notification("REST", f"Break-time after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times")
+                    send_notification(
+                        "REST", f"Break-time after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times")
                     driver.get(SIGN_OUT_LINK)
                     time.sleep(WORK_COOLDOWN_TIME * hour)
                     first_loop = True
                 else:
-                    msg = "Retry Wait Time: "+ str(RETRY_WAIT_TIME)+ " seconds"
+                    msg = "Retry Wait Time: " + \
+                        str(RETRY_WAIT_TIME) + " seconds"
                     print(msg)
                     info_logger(LOG_FILE_NAME, msg)
                     time.sleep(RETRY_WAIT_TIME)
@@ -299,6 +330,6 @@ if __name__ == "__main__":
 print(msg)
 info_logger(LOG_FILE_NAME, msg)
 send_notification(END_MSG_TITLE, msg)
-driver.get(SIGN_OUT_LINK)
-driver.stop_client()
-driver.quit()
+# driver.get(SIGN_OUT_LINK)
+# driver.stop_client()
+# driver.quit()
