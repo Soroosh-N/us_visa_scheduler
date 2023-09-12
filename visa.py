@@ -1,3 +1,4 @@
+import re
 import time
 import json
 import random
@@ -17,9 +18,10 @@ from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
 from embassy import *
+from utils import get_tomorrow
 
 config = configparser.ConfigParser()
-config.read('config.ini')
+config.read('/Users/mkushka/Desktop/us_visa_scheduler/config.ini')
 
 # Personal Info:
 # Account and current appointment info from https://ais.usvisa-info.com
@@ -87,6 +89,37 @@ JS_SCRIPT = ("var req = new XMLHttpRequest();"
              f"req.setRequestHeader('Cookie', '_yatri_session=%s');"
              "req.send(null);"
              "return req.responseText;")
+
+NO_APPOINTMENT_TEXT = "There are no available appointments at the selected location. Please try again later."
+
+
+def autodetect_period_start_and_end(LOG_FILE_NAME):
+    if (len('PRIOD_START') != len('yyyy-mm-dd')):
+        PRIOD_START = get_tomorrow()
+    if (len('PRIOD_END') != len('yyyy-mm-dd')):
+        driver.get(MAIN_URL)
+        main_page = driver.find_element(By.ID, 'main')
+        # # For debugging
+        # with open('debugging/main_page', 'w') as f:
+        #     f.write(main_page.text)
+        # Look for the current appointment date
+        match = re.search(r"\b\d{1,2} [a-zA-Z]+, \d{4}\b", main_page.text)
+        if match:
+            found_date = match.group(0)
+            date_obj = datetime.strptime(found_date, '%d %B, %Y')
+            PRIOD_END = date_obj.strftime('%Y-%m-%d')
+        else:
+            # Error loading current appointment date
+            msg = "Error loading current appointment date! Set PRIOD_END variable in config.ini manually!\n"
+            END_MSG_TITLE = "EXCEPTION"
+            info_logger(LOG_FILE_NAME, msg)
+            send_notification(END_MSG_TITLE, msg)
+            notify_in_telegram(END_MSG_TITLE + "! " + msg)
+            driver.get(SIGN_OUT_LINK)
+            driver.stop_client()
+            driver.quit()
+
+    return PRIOD_START, PRIOD_END
 
 
 def notify_in_telegram(msg):
@@ -172,7 +205,27 @@ def start_process():
     notify_in_telegram('The bot has started successfully')
 
 
+def no_appointment_check():
+    driver.get(APPOINTMENT_URL)
+    time.sleep(3)
+
+    # # For debugging
+    # with open('debugging/page_source.html', 'w', encoding='utf-8') as f:
+    #     f.write(driver.page_source)
+
+    # Getting main text
+    main_page = driver.find_element(By.ID, 'main')
+
+    # # For debugging
+    # with open('debugging/main_page', 'w') as f:
+    #     f.write(main_page.text)
+
+    # If the "no appointment" text is not found return True. A change was found.
+    return NO_APPOINTMENT_TEXT in main_page.text
+
+
 def reschedule(date):
+    print("rescheduling")
     time = get_time(date)
     driver.get(APPOINTMENT_URL)
     headers = {
@@ -190,7 +243,9 @@ def reschedule(date):
         "appointments[consulate_appointment][time]": time,
     }
     r = requests.post(APPOINTMENT_URL, headers=headers, data=data)
-    if(r.text.find('Successfully Scheduled') != -1):
+    with open('debugging/main_page', 'w') as f:
+        f.write(r.text)
+    if(r.text.find('You have successfully scheduled your visa appointment') != -1):
         title = "SUCCESS"
         msg = f"Rescheduled Successfully! {date} {time}"
     else:
@@ -264,11 +319,39 @@ if __name__ == "__main__":
     first_loop = True
     while 1:
         LOG_FILE_NAME = "logs/" + "log_" + str(datetime.now().date()) + ".log"
+        RETRY_WAIT_TIME = random.randint(
+            RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
+
+        # Out of service time
+        current_time = datetime.datetime.now().time()
+        # print(f"Current time: {current_time}")
+
+        if current_time >= datetime.time(20, 0):
+            msg = "Time is after 20:00, going to sleep."
+            print(msg)
+            info_logger(LOG_FILE_NAME, msg)
+            notify_in_telegram(msg)
+
+            # Calculate time until 15:40 next day
+            now = datetime.datetime.now()
+            next_day = now + datetime.timedelta(days=1)
+            wake_up_time = datetime.datetime.combine(
+                next_day.date(), datetime.time(15, 40))
+
+            sleep_seconds = (wake_up_time - now).total_seconds()
+            # print(f"Sleeping for {sleep_seconds} seconds.")
+
+            time.sleep(sleep_seconds)
+
         if first_loop:
             t0 = time.time()
             total_time = 0
             Req_count = 0
             start_process()
+            PRIOD_START, PRIOD_END = autodetect_period_start_and_end(
+                LOG_FILE_NAME)
+            print('PRIOD_START', PRIOD_START)
+            print('PRIOD_END', PRIOD_END)
             first_loop = False
         Req_count += 1
         try:
@@ -278,15 +361,21 @@ if __name__ == "__main__":
             info_logger(LOG_FILE_NAME, msg)
             dates = get_date()
             if not dates:
-                # Ban Situation
-                msg = f"List is empty, Probably banned!\n\tSleep for {BAN_COOLDOWN_TIME} hours!\n"
-                print(msg)
-                notify_in_telegram(msg)
-                info_logger(LOG_FILE_NAME, msg)
-                send_notification("BAN", msg)
-                driver.get(SIGN_OUT_LINK)
-                time.sleep(BAN_COOLDOWN_TIME * hour)
-                first_loop = True
+                if no_appointment_check():
+                    # No Appointments
+                    msg = "There are no appointments available\n"
+                    print(msg)
+                    info_logger(LOG_FILE_NAME, msg)
+                else:
+                    # Ban Situation
+                    msg = f"List is empty, Probably banned!\n\tSleep for {BAN_COOLDOWN_TIME} hours!\n"
+                    print(msg)
+                    notify_in_telegram(msg)
+                    info_logger(LOG_FILE_NAME, msg)
+                    send_notification("BAN", msg)
+                    driver.get(SIGN_OUT_LINK)
+                    time.sleep(BAN_COOLDOWN_TIME * hour)
+                    first_loop = True
             else:
                 # Print Available dates:
                 msg = ""
@@ -299,29 +388,28 @@ if __name__ == "__main__":
                 if date:
                     # A good date to schedule for
                     END_MSG_TITLE, msg = reschedule(date)
-                    break
-                RETRY_WAIT_TIME = random.randint(
-                    RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
-                t1 = time.time()
-                total_time = t1 - t0
-                msg = "\nWorking Time:  ~ {:.2f} minutes".format(
-                    total_time/minute)
+                    # break
+            t1 = time.time()
+            total_time = t1 - t0
+            msg = "\nWorking Time:  ~ {:.2f} minutes".format(
+                total_time/minute)
+            print(msg)
+            info_logger(LOG_FILE_NAME, msg)
+            if total_time > WORK_LIMIT_TIME * hour:
+                # Let program rest a little
+                send_notification(
+                    "REST", f"Break-time after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times")
+                driver.get(SIGN_OUT_LINK)
+                time.sleep(WORK_COOLDOWN_TIME * hour)
+                first_loop = True
+            else:
+                msg = "Retry Wait Time: " + \
+                    str(RETRY_WAIT_TIME) + " seconds"
                 print(msg)
                 info_logger(LOG_FILE_NAME, msg)
-                if total_time > WORK_LIMIT_TIME * hour:
-                    # Let program rest a little
-                    send_notification(
-                        "REST", f"Break-time after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times")
-                    driver.get(SIGN_OUT_LINK)
-                    time.sleep(WORK_COOLDOWN_TIME * hour)
-                    first_loop = True
-                else:
-                    msg = "Retry Wait Time: " + \
-                        str(RETRY_WAIT_TIME) + " seconds"
-                    print(msg)
-                    info_logger(LOG_FILE_NAME, msg)
-                    time.sleep(RETRY_WAIT_TIME)
-        except:
+                time.sleep(RETRY_WAIT_TIME)
+        except Exception as e:
+            print('Error at %s', 'division', exc_info=e)
             # Exception Occured
             msg = f"Break the loop after exception!\n"
             END_MSG_TITLE = "EXCEPTION"
