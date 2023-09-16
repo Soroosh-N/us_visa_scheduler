@@ -99,9 +99,9 @@ def autodetect_period_start_and_end(LOG_FILE_NAME):
     if (len('PRIOD_END') != len('yyyy-mm-dd')):
         driver.get(MAIN_URL)
         main_page = driver.find_element(By.ID, 'main')
-        # # For debugging
-        # with open('debugging/main_page', 'w') as f:
-        #     f.write(main_page.text)
+        # For debugging
+        with open('debugging/appointments_main_page', 'w') as f:
+            f.write(main_page.text)
         # Look for the current appointment date
         match = re.search(r"\b\d{1,2} [a-zA-Z]+, \d{4}\b", main_page.text)
         if match:
@@ -118,6 +118,8 @@ def autodetect_period_start_and_end(LOG_FILE_NAME):
             driver.get(SIGN_OUT_LINK)
             driver.stop_client()
             driver.quit()
+    else:
+        print("No PRIOD_END autodetection needed")
 
     return PRIOD_START, PRIOD_END
 
@@ -319,29 +321,6 @@ if __name__ == "__main__":
     first_loop = True
     while 1:
         LOG_FILE_NAME = "logs/" + "log_" + str(datetime.now().date()) + ".log"
-        RETRY_WAIT_TIME = random.randint(
-            RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
-
-        # Out of service time
-        current_time = datetime.datetime.now().time()
-        # print(f"Current time: {current_time}")
-
-        if current_time >= datetime.time(20, 0):
-            msg = "Time is after 20:00, going to sleep."
-            print(msg)
-            info_logger(LOG_FILE_NAME, msg)
-            notify_in_telegram(msg)
-
-            # Calculate time until 15:40 next day
-            now = datetime.datetime.now()
-            next_day = now + datetime.timedelta(days=1)
-            wake_up_time = datetime.datetime.combine(
-                next_day.date(), datetime.time(15, 40))
-
-            sleep_seconds = (wake_up_time - now).total_seconds()
-            # print(f"Sleeping for {sleep_seconds} seconds.")
-
-            time.sleep(sleep_seconds)
 
         if first_loop:
             t0 = time.time()
@@ -350,8 +329,13 @@ if __name__ == "__main__":
             start_process()
             PRIOD_START, PRIOD_END = autodetect_period_start_and_end(
                 LOG_FILE_NAME)
-            print('PRIOD_START', PRIOD_START)
-            print('PRIOD_END', PRIOD_END)
+            PRIOD_END = '2024-05-08'
+            msg = 'PRIOD_START ' + PRIOD_START
+            print(msg)
+            info_logger(LOG_FILE_NAME, msg)
+            msg = 'PRIOD_END: ' + PRIOD_END
+            print(msg)
+            info_logger(LOG_FILE_NAME, msg)
             first_loop = False
         Req_count += 1
         try:
@@ -388,26 +372,28 @@ if __name__ == "__main__":
                 if date:
                     # A good date to schedule for
                     END_MSG_TITLE, msg = reschedule(date)
-                    # break
-            t1 = time.time()
-            total_time = t1 - t0
-            msg = "\nWorking Time:  ~ {:.2f} minutes".format(
-                total_time/minute)
-            print(msg)
-            info_logger(LOG_FILE_NAME, msg)
-            if total_time > WORK_LIMIT_TIME * hour:
-                # Let program rest a little
-                send_notification(
-                    "REST", f"Break-time after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times")
-                driver.get(SIGN_OUT_LINK)
-                time.sleep(WORK_COOLDOWN_TIME * hour)
-                first_loop = True
-            else:
-                msg = "Retry Wait Time: " + \
-                    str(RETRY_WAIT_TIME) + " seconds"
+                    break
+                RETRY_WAIT_TIME = random.randint(
+                    RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
+                t1 = time.time()
+                total_time = t1 - t0
+                msg = "\nWorking Time:  ~ {:.2f} minutes".format(
+                    total_time/minute)
                 print(msg)
                 info_logger(LOG_FILE_NAME, msg)
-                time.sleep(RETRY_WAIT_TIME)
+                if total_time > WORK_LIMIT_TIME * hour:
+                    # Let program rest a little
+                    send_notification(
+                        "REST", f"Break-time after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times")
+                    driver.get(SIGN_OUT_LINK)
+                    time.sleep(WORK_COOLDOWN_TIME * hour)
+                    first_loop = True
+                else:
+                    msg = "Retry Wait Time: " + \
+                        str(RETRY_WAIT_TIME) + " seconds"
+                    print(msg)
+                    info_logger(LOG_FILE_NAME, msg)
+                    time.sleep(RETRY_WAIT_TIME)
         except Exception as e:
             print('Error at %s', 'division', exc_info=e)
             # Exception Occured
