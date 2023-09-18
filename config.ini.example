@@ -28,6 +28,9 @@ PERSONAL_SITE_USER = *********
 PERSONAL_SITE_PASS = *********
 PUSH_TARGET_EMAIL = notifyemail@gmail.com
 PERSONAL_PUSHER_URL = https://yoursite.com/api/esender.php
+; Get Telegram bot notifications
+TELEGRAM_TOKEN = 9999999999:Xxxxxxxxxxx...
+TELEGRAM_CHAT_ID = 9999999999
 
 [TIME]
 ; Time between retries/checks for available dates (seconds)
