@@ -42,6 +42,8 @@ SENDGRID_API_KEY = config['NOTIFICATION']['SENDGRID_API_KEY']
 # Get push notifications via https://pushover.net/ (Optional)
 PUSHOVER_TOKEN = config['NOTIFICATION']['PUSHOVER_TOKEN']
 PUSHOVER_USER = config['NOTIFICATION']['PUSHOVER_USER']
+# Get push notifications via https://docs.ntfy.sh/ (Optional)
+PUSH_NTFY_TOPIC = config['NOTIFICATION']['PUSH_NTFY_TOPIC']
 # Get push notifications via PERSONAL WEBSITE http://yoursite.com (Optional)
 PERSONAL_SITE_USER = config['NOTIFICATION']['PERSONAL_SITE_USER']
 PERSONAL_SITE_PASS = config['NOTIFICATION']['PERSONAL_SITE_PASS']
@@ -102,6 +104,9 @@ def send_notification(title, msg):
             "message": msg
         }
         requests.post(url, data)
+    if PUSH_NTFY_TOPIC:
+        url = f"https://ntfy.sh/{PUSH_NTFY_TOPIC}"
+        requests.post(url, data=msg.encode(encoding='utf-8'))
     if PERSONAL_SITE_USER:
         url = PERSONAL_PUSHER_URL
         data = {
