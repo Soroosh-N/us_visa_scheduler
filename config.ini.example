@@ -21,6 +21,8 @@ HUB_ADDRESS = http://localhost:9515/wd/hub
 ; Get push notifications via https://pushover.net/ (optional)
 PUSHOVER_TOKEN = 
 PUSHOVER_USER = 
+; Get push notifications via ntfy (optional)
+PUSH_NTFY_TOPIC = 
 ; Get email notifications via https://sendgrid.com/ (optional)
 SENDGRID_API_KEY = 
 ; Get push notifications via PERSONAL WEBSITE http://yoursite.com (Optional)
