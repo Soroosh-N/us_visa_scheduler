@@ -54,8 +54,8 @@ hour = 60 * minute
 # Time between steps (interactions with forms)
 STEP_TIME = 0.5
 # Time between retries/checks for available dates (seconds)
-RETRY_TIME_L_BOUND = config['TIME'].getfloat('RETRY_TIME_L_BOUND')
-RETRY_TIME_U_BOUND = config['TIME'].getfloat('RETRY_TIME_U_BOUND')
+RETRY_TIME_L_BOUND = config['TIME'].getint('RETRY_TIME_L_BOUND')
+RETRY_TIME_U_BOUND = config['TIME'].getint('RETRY_TIME_U_BOUND')
 # Cooling down after WORK_LIMIT_TIME hours of work (Avoiding Ban)
 WORK_LIMIT_TIME = config['TIME'].getfloat('WORK_LIMIT_TIME')
 WORK_COOLDOWN_TIME = config['TIME'].getfloat('WORK_COOLDOWN_TIME')
